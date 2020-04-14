@@ -6,7 +6,8 @@ library(httr)
 library(dplyr)
 library(stringr)
 library(XML)
-
+library(doParallel)
+library(foreach)
 
 baseURL <- "https://statsapi.web.nhl.com/"
 
@@ -415,18 +416,31 @@ getShiftData <- function(gamePk, team = 'Home'){
 }
 
 getAllShifts <- function(gamePks){
-  shifts <- vector(mode = 'list', length = length(gamePks))
-  pb <- txtProgressBar(min = 1, max = length(gamePks), style = 3)
-  for(i in 1:length(gamePks)){
-    setTxtProgressBar(pb, i)
+  # shifts <- vector(mode = 'list', length = length(gamePks))
+  # pb <- txtProgressBar(min = 1, max = length(gamePks), style = 3)
+  # for(i in 1:length(gamePks)){
+  dl = file("runlog.Rout", open="wt")
+  cl <- makeCluster(3)
+  registerDoParallel(cl)
+  shifts <- foreach(i = 1:length(gamePks), .packages = c('dplyr','jsonlite','rvest', 'httr'),
+                    .export = c('getShiftData', 'gamePks'),
+                    .errorhandling = "pass") %dopar% {
+    # setTxtProgressBar(pb, i)
+    sink("runlog.Rout", append=TRUE)  
+    cat(i, '/',length(gamePks), '\n', append = TRUE)
     home <- getShiftData(gamePks[i], team = 'Home')
+    home$TeamType <- 'Home'
     away <- getShiftData(gamePks[i], team = 'Away')
-    shifts[[i]] <- rbind(home, away)
+    away$TeamType <- 'Away'
+    # shifts[[i]] <- rbind(home, away)
     # shifts[[i]] <- getShiftData(gamePks[i])
-  }
+    sink(type="output")
+    return(rbind(home, away))
+                    }
   
   
-  shifts <- do.call(rbind, shifts)
+  
+  shifts <- do.call(rbind, shifts[sapply(shifts, is.data.frame)])
   return(shifts)
 }
 ############### Scrape API ###############
@@ -437,7 +451,7 @@ dbDisconnect(con)
 
 
 pullFullSeasons <- TRUE
-startDate <- "20162017"
+startDate <- "20192020"
 endDate <- "max"
 Date <- Sys.Date()
 daysBack <- 365
@@ -563,6 +577,8 @@ from Shifts e
 left join StagingSchedule s
 on e.GamePk = s.GamePk
 where s.GamePk is not null")
+dbExecute(con, "drop table Shifts")
+
 
 dbWriteTable(con, "Shifts", shiftFrame, append = TRUE)
 
