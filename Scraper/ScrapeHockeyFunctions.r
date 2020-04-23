@@ -96,7 +96,7 @@ getPlayerStatsList <- function(season, players, verbose = FALSE){
     getPlayerStats(pid, season)
   })
   
-  playerStats <- do.call(rbind, statList)
+  playerStats <- do.call(rbind, statList) %>% as.data.frame()
   
   # playerStats <- t(sapply(players, function(pid){
   #   if(verbose){
@@ -303,13 +303,27 @@ getGameEvents <- function(gameLink){
 
 
 getGameEventsList <- function(games){
-  gameEvents <- vector(mode = 'list', length = nrow(games))
+  # gameEvents <- vector(mode = 'list', length = nrow(games))
   
-  pb <- txtProgressBar(min = 1, max = nrow(games), style = 3)
-  for(i in 1:nrow(games)){
-    setTxtProgressBar(pb, i)
-    gameEvents[[i]] <- getGameEvents(games$link[i])
+  
+  dl = file("runlog.Rout", open="wt")
+  cl <- makeCluster(3)
+  registerDoParallel(cl)
+  
+  # pb <- txtProgressBar(min = 1, max = nrow(games), style = 3)
+  gameEvents <- foreach(i = 1:nrow(games), .packages = c('rvest','jsonlite', 'XML','stringr','dplyr','httr'),
+                    .export = c('getGameEvents','baseURL','getData', 'trimTime','schedule')) %dopar% {
+    sink("runlog.Rout", append=TRUE)
+    cat(round(i/nrow(games), 2))
+    sink()
+    getGameEvents(games$link[i]) %>% return()
+    
   }
+  
+  # for(i in 1:nrow(games)){
+  #   setTxtProgressBar(pb, i)
+  #   gameEvents[[i]] <- getGameEvents(games$link[i])
+  # }
   # gameEvents <- lapply(1:nrow(games), function(i) {
   #   events <- getGameEvents(games$link[i])
   # })
@@ -321,25 +335,35 @@ getGameEventsList <- function(games){
   
   events <- lapply(gameEvents, function(x){
       ev <- x$events
+      
       if(is.null(ev)){
         return(data.frame())
-      } else if(ncol(ev) == 32){
+      } else if(nrow(ev) == 0){
+        return(data.frame())  
+      } else if(!'emptyNet1'  %in% colnames(ev)){
+        ev$emptyNet1 <- 0
+      }  else if(!'coord.x' %in% colnames(ev)){
         ev$coord.x <- NA
         ev$coord.y <- NA
-      } else if(ncol(ev) == 33){
-        ev$emptyNet <- NA
-      }  
+      }
     
     return(ev)
   })
   
-  events <- events[sapply(events, ncol) == 34]
+  events <- events[sapply(events, ncol) == 35]
   cols <- colnames(events[[1]])
+  
+  # events <- lapply(events, function(x) x[,cols])
   
   events <- lapply(events, function(x){
     colnames(x) <- str_replace(colnames(x), '1', '')
-    x[,cols[1:26]]
+    # x[,cols[1:26]]
+    x
   })
+  
+  cols <- colnames(events[[1]])
+  
+  events <- lapply(events, function(x) x[,cols])
   events <- do.call(rbind, events)
   players <- do.call(rbind, lapply(gameEvents, function(x){
     x$players
@@ -451,7 +475,7 @@ dbDisconnect(con)
 
 
 pullFullSeasons <- TRUE
-startDate <- "20192020"
+startDate <- "20182019"
 endDate <- "max"
 Date <- Sys.Date()
 daysBack <- 365
@@ -485,7 +509,7 @@ seasons$runID <- runID
 
 cat("Pulling team schedules...\n")
 schedule <- getSchedule(startDate = startDate, endDate = endDate) %>% cleanColumnNames()
-playedGames <- schedule %>% filter(gameState == 'Final')
+playedGames <- schedule %>% filter(gameState == 'Final' & gameType != 'PR')
 
 cat("Pulling Player Stats...\n")
 # TODO: Pull in Player splits and career stats. 
@@ -511,6 +535,7 @@ players$runID <- runID
 
 cat("Pulling Shift Data...")
 shiftFrame <- getAllShifts((playedGames$gamePk)) %>% cleanColumnNames() 
+shiftFrame$runID <- runID
 
 cat("Writing data to database...\n")
 runInfo <- data.frame(runID = runID, 
@@ -522,6 +547,8 @@ runInfo <- data.frame(runID = runID,
 
 
 con <- dbConnect(RMariaDB::MariaDB(), user='kt1', password="KentP00kieTyler", dbname='Hockey', host='localhost')
+
+
 
 # Write Teams to database
 dbExecute(con, "Truncate Table Teams")
@@ -577,8 +604,6 @@ from Shifts e
 left join StagingSchedule s
 on e.GamePk = s.GamePk
 where s.GamePk is not null")
-dbExecute(con, "drop table Shifts")
-
 
 dbWriteTable(con, "Shifts", shiftFrame, append = TRUE)
 
