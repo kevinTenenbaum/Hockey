@@ -3,6 +3,7 @@ library(RMariaDB)
 library(tidyverse)
 library(mgcv)
 library(gbm)
+library(randomForest)
 
 
 options(stringsAsFactors = FALSE)
@@ -34,6 +35,11 @@ events <- dbGetQuery(con, "select e.event
                      , e.teamname as TeamName
                      , penaltyMinutes
                      , penaltySeverity
+                     , emptyNet1
+                     , timeSecRemaining
+                     , scorehome
+                     , scoreaway
+                     , ordinalnum as Period
                      from Events e
                      where e.event in ('Shot','Missed Shot','Goal')")
 
@@ -47,60 +53,17 @@ teams <- dbGetQuery(con, "select * from Teams")
 
 rosters <- dbGetQuery(con, "select * from Rosters")
 
+dbDisconnect(con)
 
 shots <- events %>% 
   inner_join(schedule %>% select(gamepk, homeName = homename, awayName = awayname, season), by = c('gamePk' = 'gamepk')) %>%
   inner_join(players, by = c('gamePk','eventNum')) %>%
   # inner_join(teams %>% select(id, ), by = c('teamid' = 'id')) %>%
-  inner_join(rosters %>% mutate(personid = as.integer(personid)), by = c('playerid' = 'personid'))
+  inner_join(rosters %>% mutate(personid = as.integer(personid)), by = c('playerid' = 'personid')) %>% 
+  mutate(Strength = ifelse(teamType == 'home',
+                           paste0(skatersHome, 'v', skatersAway),
+                           paste0(skatersAway, 'v', skatersHome)))
   
-  
-  
-  # 
-  # 
-  # shots <- dbGetQuery(con, "select e.event
-  #                         , e.gamePk
-  #                         , e.eventNum
-  #                         , e.description
-  #                         , e.secondaryType
-  #                         , e.period
-#                         , e.periodType
-#                         , e.emptyNet
-#                         , e.timeSecRemaining
-#                         , e.skatersHome
-#                         , e.skatersAway
-#                         , e.coordx as X
-#                         , e.coordy as Y
-#                         , teamType
-#                         , s.homename as HomeName
-#                         , s.awayname as AwayName
-#                         , e.teamname as TeamName
-#                         , penaltyMinutes
-#                         , penaltySeverity
-#                         , playerid as ShooterID
-#                         , playerfullName as playerFullName
-#                         , r.shootsCatches
-#                         , case when e.teamid = s.homeid then 'home' else 'away' end as teamType
-# , case when teamType = 'home' then concat(skatersHome, '-', skatersAway)
-#                                                       else concat(skatersHome, '-', skatersAway) end as Strength
-#            from Events e
-#            inner join Schedule s 
-#            on s.gamePk = e.gamePk
-#            inner join (
-#               select * from Players p 
-#               where playerType in ('Scorer','Shooter')
-#            ) p
-#            on p.gamePk = e.gamePk and p.eventNum = e.eventNum
-#            inner join Teams t
-#            on t.id = e.teamid
-#            inner join Rosters r
-#            on r.personid = p.playerid
-#            where e.event in ('Shot','Missed Shot','Goal')
-#            and season = 20192020
-#                     limit 20")
-# dbGetQuery(con, "select * from Rosters limit 10")
-
-dbDisconnect(con)
 
 teamSides <- shots %>% 
   group_by(period, TeamName, gamePk) %>%
@@ -116,7 +79,6 @@ shots$emptyNet <- replace(shots$emptyNet, is.na(shots$emptyNet), 0)
 
 shots <- shots %>% filter(emptyNet == 0)
 shots$goal <- ifelse(shots$event == 'Goal', 1, 0)
-
 
 circleFun <- function(center=c(0,0), diameter=1, npoints=100, start=0, end=2)
 {
@@ -160,7 +122,18 @@ plotRink <- function(){
 }
 
 
-xGFit <- bam(goal ~ s(X, Y, by = as.factor(shootsCatches)) + shootsCatches + as.factor(period) + Strength + teamType + s(timeSecRemaining, by = period), data = shots, family = binomial(link = 'logit'))
+### Impute secondary shot type ### 
+
+secondaryFit <- ranger(as.factor(secondaryType) ~ Strength + teamType + X + Y + shootsCatches + timeSecRemaining, data = shots %>% filter(!is.na(secondaryType) & !is.na(X) & !is.na(Y)))
+
+
+shots$secondaryImputed[!is.na(shots$X) & !is.na(shots$Y)] <- predict(secondaryFit, data = shots[!is.na(shots$X) & !is.na(shots$Y),])$predictions %>% as.character()
+shots$secondaryUse <- coalesce(shots$secondaryType, shots$secondaryImputed)
+
+
+
+### Fit xG Model
+xGFit <- bam(goal ~ s(X, Y, by = as.factor(shootsCatches)) + shootsCatches + as.factor(period) + Strength + teamType + s(timeSecRemaining, by = period) + secondaryUse, data = shots, family = binomial(link = 'logit'), discrete = TRUE)   
 summary(xGFit)
 
 
@@ -169,5 +142,11 @@ shots$xG <- predict(xGFit, newdata = shots, type = 'response')
 
 
 
-plotRink() + geom_point(data = shots %>% filter(emptyNet != 1) %>% mutate(goal = event == 'Goal'), aes(x = X, y = Y, colour = xG, alpha = .3)) +
-  scale_color_gradient(low = 'blue', high = 'red') + xlim(-100, 0) + facet_wrap(~shootsCatches)
+plotRink() + geom_point(data = shots %>% filter(emptyNet != 1 & shootsCatches == 'L') %>% mutate(goal = event == 'Goal'), aes(x = X, y = Y, colour = xG, alpha = .3)) +
+  scale_color_gradient(low = 'blue', high = 'red') + xlim(-100, 0) + facet_wrap(~secondaryUse)
+
+
+### Examine Achivement by Player 
+
+
+
