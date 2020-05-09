@@ -108,6 +108,31 @@ getPlayerStatsList <- function(season, players, verbose = FALSE){
   return(playerStats)
 }
 
+# for(p in 1:length(unique(players$playerid))){
+#   playerid <- unique(players$playerid)[p]
+#   pl <- getPlayerInfo(playerid)
+# }
+
+getPlayerInfo <- function(playerid){
+  url <- paste0(baseURL, "api/v1/people/", playerid)
+  
+  person <- getData(url)$people
+  if(is.null(person$shootsCatches)){
+    person$shootsCatches <- NA
+  }
+  if(is.null(person$birthStateProvince)){
+    person$birthStateProvince <- NA
+  }
+  
+  
+  pos <- person$primaryPosition
+  colnames(pos) <- paste0('Pos.', colnames(pos))
+  person <- bind_cols(person[,c('id','fullName','firstName','lastName','birthDate','birthCity','birthStateProvince','birthCountry','nationality',
+            'height','weight','active','rookie','rosterStatus', 'shootsCatches')], pos)
+  
+  return(person)  
+}
+
 getSeasons <- function(){
   url <- paste0(baseURL,"api/v1/seasons")
   getData(url)$seasons
@@ -511,19 +536,6 @@ cat("Pulling team schedules...\n")
 schedule <- getSchedule(startDate = startDate, endDate = endDate) %>% cleanColumnNames()
 playedGames <- schedule %>% filter(gameState == 'Final' & gameType != 'PR')
 
-cat("Pulling Player Stats...\n")
-# TODO: Pull in Player splits and career stats. 
-curSeason <- unique(playedGames$season)
-if(length(curSeason) > 1){
-  playerStats <- do.call(rbind, lapply(curSeason, function(s){
-    getPlayerStatsList(season = s, players = (rosters$personid))  
-  })) %>% cleanColumnNames()
-  
-} else{
-  playerStats <- getPlayerStatsList(season = curSeason, players = (rosters$personid)) %>% cleanColumnNames()
-}
-
-playerStats$runID <- runID
 
 cat("Pulling game event data...\n")
 gameEvents <- getGameEventsList(playedGames) 
@@ -532,6 +544,24 @@ events$runID <- runID
 players <- gameEvents$players %>% cleanColumnNames()
 players$runID <- runID
 
+cat("Pulling Player Stats...\n")
+# TODO: Pull in Player splits and career stats. 
+curSeason <- unique(playedGames$season)
+if(length(curSeason) > 1){
+  playerStats <- do.call(rbind, lapply(curSeason, function(s){
+    getPlayerStatsList(season = s, players = unique(players$playerid))  
+  })) %>% cleanColumnNames()
+  
+} else{
+  playerStats <- getPlayerStatsList(season = curSeason, players = unique(players$playerid)) %>% cleanColumnNames()
+}
+
+playerStats$runID <- as.numeric(runID)
+
+cat("Pull Player Info...")
+playerInfo <- (lapply(unique(players$playerid), function(x) getPlayerInfo(x)))
+playerInfo <- (bind_rows(playerInfo))
+playerInfo$runID <- runID
 
 cat("Pulling Shift Data...")
 shiftFrame <- getAllShifts((playedGames$gamePk)) %>% cleanColumnNames() 
@@ -595,6 +625,24 @@ on e.GamePk = s.GamePk
 where s.GamePk is not null")
 dbWriteTable(con, "Players", players, append = TRUE)
 
+# Write Player Info Data
+stagePlayerInfo <- dbReadTable(con, "PlayerInfo")
+keepPlayerInfo <- stagePlayerInfo %>% anti_join(playerInfo, by = 'id')
+playerInfo <- bind_rows(keepPlayerInfo, playerInfo)
+for(i in 1:ncol(playerInfo)){
+  class(playerInfo[,i]) <- class(keepPlayerInfo[,i])
+}
+dbWriteTable(con, "PlayerInfo", playerInfo, append = FALSE, overwrite = TRUE)
+
+# Write Player Stats Data
+stagePlayerStats <- dbReadTable(con, 'PlayerStats')
+for(i in 1:ncol(playerStats)){
+  class(playerStats[,i]) <- class(stagePlayerStats[,i])
+}
+keepPlayerStats <- stagePlayerStats %>% anti_join(playerStats, by = 'playerid')
+playerStats <- bind_rows(keepPlayerStats, playerStats)
+
+dbWriteTable(con, "PlayerStats", playerStats, append = TRUE)
 
 
 # Write Shift Data
