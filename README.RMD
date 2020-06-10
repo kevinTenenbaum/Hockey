@@ -74,7 +74,7 @@ shiftFrame$runID <- runID
 
 # Expected Goals Model
 
-```{r echo = FALSE}
+```{r echo = FALSE, message=FALSE}
 library(dplyr)
 source('~/R/Hockey/Scraper/CreateDBConnection.R')
 gamFit <- readRDS("xG/models/GAMFit20182019.RDS")
