@@ -6,7 +6,7 @@ library(lme4)
 season <- '20182019'
 
 ### Pull in data
-con <- dbConnect(RMariaDB::MariaDB(), user='kt1', password="KentP00kieTyler", dbname='Hockey', host='localhost')
+con <- dbCon("Hockey")
 shots <- dbGetQuery(con, paste0("select g.*, s.season
                     from xGoal g
                     inner join Schedule s

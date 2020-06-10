@@ -13,8 +13,7 @@ options(stringsAsFactors = FALSE)
 
 season <- '20182019'
 
-con <- dbConnect(RMariaDB::MariaDB(), user='kt1', password="KentP00kieTyler", dbname='Hockey', host='localhost')
-
+con <- dbCon("Hockey")
 # dbGetQuery(con, "select emptyNet, count(*) from Events e where e.event = 'Goal' group by emptyNet")
 
 
