@@ -4,7 +4,7 @@ library(tidyverse)
 library(lme4)
 
 season <- '20182019'
-
+source('~/R/Hockey/Scraper/CreateDBConnection.R')
 ### Pull in data
 con <- dbCon("Hockey")
 shots <- dbGetQuery(con, paste0("select g.*, s.season
@@ -54,3 +54,4 @@ aggPerformance <- shots %>% inner_join(players, by = c('playerid')) %>%
 
 
 ## TODO: write this table to database
+

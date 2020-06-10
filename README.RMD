@@ -73,3 +73,73 @@ shiftFrame$runID <- runID
 
 
 # Expected Goals Model
+
+```{r echo = FALSE}
+library(dplyr)
+source('~/R/Hockey/Scraper/CreateDBConnection.R')
+gamFit <- readRDS("xG/models/GAMFit20182019.RDS")
+forestFit <- readRDS("xG/models/ForestFit20182019.RDS")
+shotImpute <- readRDS("xG/models/ShotTypeImpute20182019.RDS")
+```
+
+Once we collect the data, we can build an expected goals (xG) model that estimates the probability a shot will be a goal based on a variety of factors. 
+
+## Included Variables
+* Shot Location (X, Y)
+* Shooter Handedness
+* Period
+* Time Remaining
+* Home/Away Team
+* Team  Strength: Even or power play
+* Shot Type: We impute this when missing, as the NHL does not report the shot type on shots that are not on net. See below for more details on the imputation method.
+
+
+## Model Structure
+We fit xG models using a generalized additive model (GAM) and a random forest.
+
+### GAM model code 
+```{r echo = FALSE, results = 'asis'}
+gamFit$formula
+```
+
+### Random Forest model code
+```{r echo = FALSE, results = 'asis'}
+forestFit$call
+```
+
+
+## Shot Type Imputation
+We impute shot types so we can fill in blanks that NHL leaves out when a shot attempt is not on net. We use a random forest for this imputation with the below model specification:
+
+```{r echo = FALSE, results = 'asis'}
+shotImpute$call
+```
+
+## Results
+
+We can make some cool plots showing the results of the each xG model using our `plotRink` function.
+
+First we can make an empty rink plot to show what the function outputs:
+```{r}
+library(ggplot2)
+source('~/R/Hockey/plot functions.R')
+plotRink()
+```
+
+Now that we have out rink plotting function, we can layer some interesting plots on top of the plot. This first plot just shows all of the shots in the 2018-2019 season colored by xG from the random forest model.
+
+```{r include = FALSE}
+con <- dbCon("Hockey")
+shots <- dbReadTable(con,"xGoal") %>% filter(season == 20182019)
+dbDisconnect(con)
+```
+
+```{r, warning=FALSE, message = FALSE}
+plotRink() + geom_point(data = shots %>% filter(emptyNet != 1) %>% mutate(goal = event == 'Goal'), aes(x = X, y = Y, colour = xGrf, alpha = .3)) + scale_color_gradient(low = 'blue', high = 'red') + xlim(-100, 0)
+```
+
+The next plot does the same thing but facets it out by skater handedness
+
+```{r warning = FALSE, message=FALSE}
+plotRink() + geom_point(data = shots %>% filter(emptyNet != 1) %>% mutate(goal = event == 'Goal'), aes(x = X, y = Y, colour = xGrf, alpha = .3)) + scale_color_gradient(low = 'blue', high = 'red') + xlim(-100, 0) + facet_wrap(~shootsCatches)
+```

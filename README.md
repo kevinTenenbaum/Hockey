@@ -73,3 +73,88 @@ shiftFrame$runID <- runID
 
 
 # Expected Goals Model
+
+
+```
+## 
+## Attaching package: 'dplyr'
+```
+
+```
+## The following objects are masked from 'package:stats':
+## 
+##     filter, lag
+```
+
+```
+## The following objects are masked from 'package:base':
+## 
+##     intersect, setdiff, setequal, union
+```
+
+Once we collect the data, we can build an expected goals (xG) model that estimates the probability a shot will be a goal based on a variety of factors. 
+
+## Included Variables
+* Shot Location (X, Y)
+* Shooter Handedness
+* Period
+* Time Remaining
+* Home/Away Team
+* Team  Strength: Even or power play
+* Shot Type: We impute this when missing, as the NHL does not report the shot type on shots that are not on net. See below for more details on the imputation method.
+
+
+## Model Structure
+We fit xG models using a generalized additive model (GAM) and a random forest.
+
+### GAM model code 
+goal ~ s(X, Y, by = as.factor(shootsCatches)) + shootsCatches + 
+    as.factor(period) + Strength + teamType + s(timeSecRemaining, 
+    by = period) + secondaryUse
+
+### Random Forest model code
+ranger(as.factor(goal) ~ X + Y + shootsCatches + period + Strength + 
+    teamType + timeSecRemaining + secondaryUse, data = shots, 
+    probability = TRUE)
+
+
+## Shot Type Imputation
+We impute shot types so we can fill in blanks that NHL leaves out when a shot attempt is not on net. We use a random forest for this imputation with the below model specification:
+
+ranger(as.factor(secondaryType) ~ Strength + teamType + X + Y + 
+    timeSecRemaining + shootsCatches, data = shots %>% filter(!is.na(secondaryType) & 
+    !is.na(X) & !is.na(Y) & !is.na(shootsCatches)))
+
+## Results
+
+We can make some cool plots showing the results of the each xG model using our `plotRink` function.
+
+First we can make an empty rink plot to show what the function outputs:
+
+```r
+library(ggplot2)
+source('~/R/Hockey/plot functions.R')
+plotRink()
+```
+
+![](README_files/figure-html/unnamed-chunk-6-1.png)<!-- -->
+
+Now that we have out rink plotting function, we can layer some interesting plots on top of the plot. This first plot just shows all of the shots in the 2018-2019 season colored by xG from the random forest model.
+
+
+
+
+```r
+plotRink() + geom_point(data = shots %>% filter(emptyNet != 1) %>% mutate(goal = event == 'Goal'), aes(x = X, y = Y, colour = xGrf, alpha = .3)) + scale_color_gradient(low = 'blue', high = 'red') + xlim(-100, 0)
+```
+
+![](README_files/figure-html/unnamed-chunk-8-1.png)<!-- -->
+
+The next plot does the same thing but facets it out by skater handedness
+
+
+```r
+plotRink() + geom_point(data = shots %>% filter(emptyNet != 1) %>% mutate(goal = event == 'Goal'), aes(x = X, y = Y, colour = xGrf, alpha = .3)) + scale_color_gradient(low = 'blue', high = 'red') + xlim(-100, 0) + facet_wrap(~shootsCatches)
+```
+
+![](README_files/figure-html/unnamed-chunk-9-1.png)<!-- -->
