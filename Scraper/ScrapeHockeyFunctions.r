@@ -9,6 +9,8 @@ library(XML)
 library(doParallel)
 library(foreach)
 
+source('~/R/Hockey/Scraper/CreateDBConnection.R')
+
 baseURL <- "https://statsapi.web.nhl.com/"
 
 getData <- function(url){
@@ -410,7 +412,7 @@ cleanColumnNames <- function(df){
 
 
 dropTable <- function(name){
-  con <- dbConnect(RMariaDB::MariaDB(), user='kt1', password="KentP00kieTyler", dbname='Hockey', host='localhost')
+  con <- dbCon('Hockey')
   dbExecute(con, paste0("drop table if exists ", name))
   dbDisconnect(con)
 }
@@ -493,15 +495,15 @@ getAllShifts <- function(gamePks){
   return(shifts)
 }
 ############### Scrape API ###############
-con <- dbConnect(RMariaDB::MariaDB(), user='kt1', password="KentP00kieTyler", dbname='Hockey', host='localhost')
+con <- dbCon('Hockey')
 runID <- dbGetQuery(con, "select RunID from RunInfo order by updateTime desc limit 1") %>% unlist() + 1
 dbDisconnect(con)
 
 
 
 pullFullSeasons <- TRUE
-startDate <- "20182019"
-endDate <- "max"
+startDate <- "20172018"
+endDate <- "20172018"
 Date <- Sys.Date()
 daysBack <- 365
 # startDate <- as.character(Date - daysBack)
@@ -576,8 +578,7 @@ runInfo <- data.frame(runID = runID,
   
 
 
-con <- dbConnect(RMariaDB::MariaDB(), user='kt1', password="KentP00kieTyler", dbname='Hockey', host='localhost')
-
+con <- dbCon("Hockey")
 
 
 # Write Teams to database
@@ -628,10 +629,11 @@ dbWriteTable(con, "Players", players, append = TRUE)
 # Write Player Info Data
 stagePlayerInfo <- dbReadTable(con, "PlayerInfo")
 keepPlayerInfo <- stagePlayerInfo %>% anti_join(playerInfo, by = 'id')
-playerInfo <- bind_rows(keepPlayerInfo, playerInfo)
 for(i in 1:ncol(playerInfo)){
   class(playerInfo[,i]) <- class(keepPlayerInfo[,i])
 }
+playerInfo <- bind_rows(keepPlayerInfo, playerInfo)
+
 dbWriteTable(con, "PlayerInfo", playerInfo, append = FALSE, overwrite = TRUE)
 
 # Write Player Stats Data
