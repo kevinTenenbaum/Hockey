@@ -53,5 +53,12 @@ aggPerformance <- shots %>% inner_join(players, by = c('playerid')) %>%
             GAddperShot = GAdd/shots) %>% arrange(desc(xG))
 
 
-## TODO: write this table to database
+aggPerformanceGoalie <- shots %>% inner_join(players, by = c('goalieid' = 'playerid')) %>% 
+  group_by(goalieid, fullName, season) %>% 
+  summarise(shots = n(),
+            G = sum(goal),
+            xG = sum(xG),
+            GSaved = -sum(GoalieAdd),
+            GSaveperShot = GSaved/shots) %>% arrange(desc(xG))
 
+## TODO: write this table to database

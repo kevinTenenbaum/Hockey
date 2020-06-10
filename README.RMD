@@ -143,3 +143,102 @@ The next plot does the same thing but facets it out by skater handedness
 ```{r warning = FALSE, message=FALSE}
 plotRink() + geom_point(data = shots %>% filter(emptyNet != 1) %>% mutate(goal = event == 'Goal'), aes(x = X, y = Y, colour = xGrf, alpha = .3)) + scale_color_gradient(low = 'blue', high = 'red') + xlim(-100, 0) + facet_wrap(~shootsCatches)
 ```
+
+## Next Steps
+* Add an option for XGBoost in addition to our GAM and Random Forest models.
+* Create a feature for the last event type and time since the last event and add it to the model
+* Evaluate models using k-fold cross validation to determine which model we should use.
+* Explore using an ensemble model of our various approaches
+
+# Goal Execution Model
+Using the above expected goal model, we can estimate a player's shooting ability independent of his shot selection ability. To do this, we use a logistic random effects regression model to estimate the likelihood of a goal given the xG model from above and the shooter and goalie identiites. See below for the model structure:
+
+## Model Code
+
+```{r, include = FALSE}
+library(DBI)
+library(RMariaDB)
+library(tidyverse)
+library(lme4)
+
+season <- '20182019'
+source('~/R/Hockey/Scraper/CreateDBConnection.R')
+### Pull in data
+con <- dbCon("Hockey")
+shots <- dbGetQuery(con, paste0("select g.*, s.season
+                    from xGoal g
+                    inner join Schedule s
+                    on g.gamePk = s.gamePk
+                    where s.season = ", season))
+  
+
+players <- dbGetQuery(con, "select id as playerid, fullName from PlayerInfo")
+
+dbDisconnect(con)
+
+
+### Examine Achivement by Player 
+reFit <- glmer(goal ~ xG + (1 | playerid) + (1 | goalieid), data = shots, family = binomial(link = 'logit'))
+summary(reFit)
+
+
+ref <- ranef(reFit)
+colnames(ref$playerid) <- 'playerCoef'
+colnames(ref$goalieid) <- 'goalieCoef'
+ref$playerid$playerid <- as.numeric(rownames(ref$playerid))
+ref$goalieid$goalieid <- as.numeric(rownames(ref$goalieid))
+
+
+shots <- shots %>% inner_join(ref$goalieid, by = 'goalieid') 
+shots <- shots %>% inner_join(ref$playerid, by = 'playerid')
+
+shots$baseline <- predict(reFit, newdata = shots)
+shots <- shots %>% mutate(
+                 baselineProb = plogis(baseline),
+                 noGoalie = plogis(baseline - goalieCoef),
+                 noShooter = plogis(baseline - playerCoef),
+                 GoalieAdd = baselineProb - noGoalie,
+                 ShooterAdd = baselineProb - noShooter) 
+
+
+
+aggPerformance <- shots %>% inner_join(players, by = c('playerid')) %>% 
+  group_by(playerid, fullName, season) %>% 
+  summarise(shots = n(),
+            G = sum(goal),
+            xG = sum(xG),
+            GAdd = sum(ShooterAdd),
+            GAddperShot = GAdd/shots) %>% arrange(desc(xG))
+
+aggPerformanceGoalie <- shots %>% inner_join(players, by = c('goalieid' = 'playerid')) %>% 
+  group_by(goalieid, fullName, season) %>% 
+  summarise(shots = n(),
+            G = sum(goal),
+            xG = sum(xG),
+            GSaved = -sum(GoalieAdd),
+            GSaveperShot = GSaved/shots) %>% arrange(desc(xG))
+
+```
+
+glmer(goal ~ xG + (1 | playerid) + (1 | goalieid), data = shots, family = binomial(link = 'logit'))
+
+
+You can also see the list of best shooters from our model for the 2018-2019 season here:
+```{r, echo = FALSE, message=FALSE}
+library(stargazer)
+agg <- aggPerformance %>% arrange(desc(GAdd)) %>% 
+  mutate(xG = round(xG,1),
+         GAdd = round(GAdd, 1),
+         GAddperShot = round(GAddperShot, 3))
+stargazer(head(agg, 10), summary = FALSE, type = 'text')
+```
+
+We can show the same top performers from our goalie goals saved here:
+
+```{r, echo = FALSE, message=FALSE}
+agg <- aggPerformanceGoalie %>% arrange(desc(GSaved)) %>% 
+  mutate(xG = round(xG,1),
+         GSaved = round(GSaved, 1),
+         GSaveperShot = round(GSaveperShot, 3))
+stargazer(head(agg, 10), summary = FALSE, type = 'text')
+```
