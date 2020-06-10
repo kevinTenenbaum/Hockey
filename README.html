@@ -183,7 +183,9 @@ summary {
 <div id="data-scraping" class="section level1">
 <h1>Data Scraping</h1>
 <p>You can scrape data from the NHL’s API using the code found in the Scraper folder. You can pull data based on a start date and end date with the ability to set them as start and end seasonID’s. The below code walks through the code’s scraping functions and pulls it all into your local R session.</p>
-<pre class="r"><code>seasonInfo &lt;- getSeasonInfo()
+<pre class="r"><code>source('~/R/Hockey/Scraper/ScrapeHockeyFunctions.r')
+
+seasonInfo &lt;- getSeasonInfo()
 if(pullFullSeasons){
   startDate &lt;- seasonInfo %&gt;% filter(seasonId == startDate) %&gt;% dplyr::select(regularSeasonStartDate) %&gt;% unlist()
   
@@ -241,6 +243,9 @@ playerInfo$runID &lt;- runID
 cat(&quot;Pulling Shift Data...&quot;)
 shiftFrame &lt;- getAllShifts((playedGames$gamePk)) %&gt;% cleanColumnNames() 
 shiftFrame$runID &lt;- runID</code></pre>
+</div>
+<div id="expected-goals-model" class="section level1">
+<h1>Expected Goals Model</h1>
 </div>
 
 

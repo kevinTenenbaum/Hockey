@@ -7,7 +7,8 @@ output:
 # Data Scraping
 You can scrape data from the NHL's API using the code found in the Scraper folder. You can pull data based on a start date and end date with the ability to set them as start and end seasonID's. The below code walks through the code's scraping functions and pulls it all into your local R session. 
 
-```{r eval=FALSE}
+
+```r
 source('~/R/Hockey/Scraper/ScrapeHockeyFunctions.r')
 
 seasonInfo <- getSeasonInfo()
@@ -68,7 +69,6 @@ playerInfo$runID <- runID
 cat("Pulling Shift Data...")
 shiftFrame <- getAllShifts((playedGames$gamePk)) %>% cleanColumnNames() 
 shiftFrame$runID <- runID
-
 ```
 
 
