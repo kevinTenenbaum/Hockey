@@ -11,7 +11,7 @@ dbDisconnect(con)
 
 
 pullFullSeasons <- TRUE
-startDate <- "20172018"
+startDate <- "20152016"
 endDate <- "20172018"
 Date <- Sys.Date()
 daysBack <- 365
@@ -69,14 +69,41 @@ if(length(curSeason) > 1){
 
 playerStats$runID <- as.numeric(runID)
 
-cat("Pull Player Info...")
+cat("Pull Player Info... \n")
 playerInfo <- (lapply(unique(players$playerid), function(x) getPlayerInfo(x)))
 playerInfo <- (bind_rows(playerInfo))
 playerInfo$runID <- runID
 
-cat("Pulling Shift Data...")
-shiftFrame <- getAllShifts((playedGames$gamePk)) %>% cleanColumnNames() 
+cat("Pulling Shift Data... \n")
+shiftFrame <- getAllShifts(head(playedGames$gamePk)) %>% cleanColumnNames() 
 shiftFrame$runID <- runID
+
+options(stringsAsFactors = FALSE)
+
+reversePaste <- function(x){
+  paste0(rev(x))
+}
+
+pNames <- str_split((unique(shiftFrame$PlayerNameNumber)), ' ')
+pNames <- lapply((pNames), function(x) rev(x[-1]))
+
+complex <- which(sapply(pNames, length) > 2)
+for(i in (complex)){
+  nm <- pNames[[i]]
+  fName <- nm[1]
+  lName <- nm[2]
+  mid <- rev(nm[3:length(nm)])
+  
+  pNames[[i]] <- c(fName, mid, lName)
+}
+
+pNames <- str_replace(tolower(unlist(lapply(pNames, paste, collapse = ' '))), ',', '')
+pNames <- data.frame(name  = pNames, PlayerNameNumber = unique(shiftFrame$PlayerNameNumber), stringsAsFactors = FALSE)
+
+joined <- playerInfo %>% mutate(name = tolower(fullName)) %>% select(name, id) %>% left_join(pNames, by = 'name') 
+
+shiftFrame <- shiftFrame %>% left_join(joined %>% select(-name), by = c('PlayerNameNumber'))
+
 
 cat("Writing data to database...\n")
 runInfo <- data.frame(runID = runID, 
@@ -164,6 +191,7 @@ left join StagingSchedule s
 on e.GamePk = s.GamePk
 where s.GamePk is not null")
 
+
 dbWriteTable(con, "Shifts", shiftFrame, append = TRUE)
 
 
@@ -172,5 +200,6 @@ dbWriteTable(con, "RunInfo", runInfo, append = TRUE)
 
 
 dbDisconnect(con)
+cat("Shutting Down... \n")
 
 system("sudo poweroff")

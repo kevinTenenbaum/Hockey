@@ -490,5 +490,5 @@ getAllShifts <- function(gamePks){
   
   
   shifts <- do.call(rbind, shifts[sapply(shifts, is.data.frame)])
-  return(shiftgits)
+  return(shifts)
 }
