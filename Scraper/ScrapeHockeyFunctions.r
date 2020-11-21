@@ -15,6 +15,37 @@ getData <- function(url){
   fromJSON(as.character((GET(url))))
 }
 
+combineRows <- function(dfList, allPossibleCols  = FALSE){
+  colNums <- sapply(dfList, ncol)
+  if(allPossibleCols){
+    cols<- unique(do.call(c, sapply(dfList, colnames)))
+    shorter <- which(colNums < length(cols))
+  } else{
+    idx <- which.max(colNums)
+    cols <- colnames(dfList[[idx]])
+    shorter <- which(colNums < ncol(dfList[[idx]]))
+  }
+  
+  if (length(shorter) > 0){
+    for(s in shorter){
+      missing <- setdiff(cols, colnames(dfList[[s]]))
+      for(col in missing){
+        dfList[[s]][,col] <- NA
+      }
+      
+    }  
+  }  
+  
+  
+  
+  outFrame <- do.call(rbind, lapply(dfList, function(x){
+    
+    x <- x[,cols]
+  }))
+  return(outFrame)
+}
+
+
 getTeamData <- function(){
   url <- paste0(baseURL, 'api/v1/teams')
   
@@ -49,13 +80,7 @@ getTeamRoster <- function(teamid){
                           stringsAsFactors = FALSE)
   people <- lapply(rosterDat$person.link, getPerson)
   
-  colNums <- sapply(people, ncol)
-  idx <- which.max(colNums)
-  
-  peopleFrame <- do.call(rbind, lapply(people, function(x){
-    
-    x <- x[,colnames(people[[idx]])]
-  }))
+  peopleFrame <- combineRows(people)
   
   rosterDat <- bind_cols(rosterDat, peopleFrame)
   
@@ -375,21 +400,24 @@ getGameEventsList <- function(games){
     return(ev)
   })
   
-  events <- events[sapply(events, ncol) == 35]
-  cols <- colnames(events[[1]])
+  # events <- events[sapply(events, ncol) == 35]
+  # cols <- colnames(events[[1]])
   
   # events <- lapply(events, function(x) x[,cols])
   
   events <- lapply(events, function(x){
+    # x <- x %>% select(-starts_with('empty_net.'))
     colnames(x) <- str_replace(colnames(x), '1', '')
+    
     # x[,cols[1:26]]
     x
   })
   
-  cols <- colnames(events[[1]])
-  
-  events <- lapply(events, function(x) x[,cols])
-  events <- do.call(rbind, events)
+  # cols <- colnames(events[[1]])
+  events <- combineRows(events, allPossibleCols = TRUE)
+  # events <- lapply(events, function(x) x[,cols])
+  # events <- do.call(rbind, events)
+  # 
   players <- do.call(rbind, lapply(gameEvents, function(x){
     x$players
   }))

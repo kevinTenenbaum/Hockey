@@ -1,7 +1,7 @@
 
 
 source('~/R/Hockey/Scraper/ScrapeHockeyFunctions.r')
-source('~/R/Hockey/Scraper/CreateDBConnection.R')
+source('~/R/CreateDatabaseConnection.R')
 
 ############### Scrape API ###############
 con <- dbCon('Hockey')
@@ -11,8 +11,8 @@ dbDisconnect(con)
 
 
 pullFullSeasons <- TRUE
-startDate <- "20152016"
-endDate <- "20172018"
+startDate <- "20192020"
+endDate <- "20192020"
 Date <- Sys.Date()
 daysBack <- 365
 # startDate <- as.character(Date - daysBack)
@@ -75,7 +75,7 @@ playerInfo <- (bind_rows(playerInfo))
 playerInfo$runID <- runID
 
 cat("Pulling Shift Data... \n")
-shiftFrame <- getAllShifts(head(playedGames$gamePk)) %>% cleanColumnNames() 
+shiftFrame <- getAllShifts((playedGames$gamePk)) %>% cleanColumnNames() 
 shiftFrame$runID <- runID
 
 options(stringsAsFactors = FALSE)
